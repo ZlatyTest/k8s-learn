@@ -1,0 +1,143 @@
+==> nginx-deployment.yaml <==
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-deployment
+  namespace: namespace
+  labels:
+    app: nginx
+spec:
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+        #https://medium.com/@johnjjung/building-a-kubernetes-daemonstatefulset-30ad0592d8cb
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 1
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                  - key: "app"
+                    operator: In
+                    values:
+                    - nginx
+              topologyKey: "kubernetes.io/hostname"
+      containers:
+      - name: nginx
+        image: nginx:stable
+        resources:
+          requests:
+            memory: "500M"
+            cpu: "0.5"
+          limits:
+            memory: "2G"
+            cpu: "2"
+        ports:
+        - containerPort: 80
+        volumeMounts:
+        - name: namespace-storage
+          mountPath: /var/www/html
+          subPath: docroot
+        - name: namespace-storage
+          mountPath: /etc/nginx/conf.d
+          subPath: nginx
+      - name: php-fpm-redis
+        image: php-fpm-redis:1.0
+        resources:
+          requests:
+            memory: "500M"
+            cpu: "0.5"
+          limits:
+            memory: "2G"
+            cpu: "2"
+        ports:
+        - containerPort: 9000
+        volumeMounts:
+        - name: namespace-storage
+          mountPath: /var/www/html
+          subPath: docroot
+
+#      - name: netcat
+#        image: nbrown/nwutils
+      volumes:
+      - name: namespace-storage
+        persistentVolumeClaim:
+          claimName: namespace-claim
+
+==> nginx-hpa.yaml <==
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: nginx-hpa
+  namespace: namespace
+spec:
+  maxReplicas: 5
+  metrics:
+  - resource:
+      name: cpu
+      target:
+        averageUtilization: 80
+        type: Utilization
+    type: Resource
+  minReplicas: 2
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: nginx-deployment
+#  behavior:
+#  #    scaleDown:
+#  #      stabilizationWindowSeconds: 300
+#  #      policies:
+#  #      - type: Pods
+#  #        value: 1
+#  #        periodSeconds: 60
+#  #    scaleUp:
+#  #      stabilizationWindowSeconds: 0
+#  #      policies:
+#  #      - type: Pods
+#  #        value: 1
+#  #        periodSeconds: 60
+#
+
+==> nginx-service.yaml <==
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-service
+  namespace: namespace
+spec:
+  selector:
+    app: nginx
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80
+
+==> nginx.yaml <==
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-deployment
+  labels:
+    app: nginx
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:1.14.2
+        ports:
+        - containerPort: 80
